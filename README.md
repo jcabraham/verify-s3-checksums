@@ -21,14 +21,18 @@ The md5sum is ALREADY calculated for you. The AWS S3 API calculates the md5sum a
 
 ### 0. Install this thing
 ```bash
+$ git clone git@github.com:jcabraham/verify-s3-checksums.git
+$ cd verify-s3-checksums
 
-$ git clone git@github.com:jcabraham/verify-checksums.git
-
+# install pipenv (if not done already)
+$ pip install pipenv
+# install everything in Pipfile
+$ pipenv install
 ```
-
+NOTE: boto3 here is configured to use your ~/.aws/credentials [default] profile. I leave parameterizing this as an exercise to the reader.
 
 ### 1. Transfer your files
-Do this however you wish, but I like using RCLONE to do transfers: it's extremely efficient and easy to configure. An example config for IMPACC:
+Do this however you wish, but I like using RCLONE to do transfers: it's extremely efficient and easy to configure. An example config:
 
 To use RCLONE, install it via brew (Mac), yum/apt (Linux), or the web (Windows). Copy this example to the following path:
 
@@ -37,10 +41,10 @@ To use RCLONE, install it via brew (Mac), yum/apt (Linux), or the web (Windows).
 ```
 
 ```
-[impacc]
+[my_bucket]
 type = sftp
-host = [impacc sftp host]
-user = [my_username]
+host = [my sftp host]
+user = [my username]
 key_file = [path_to_my_private_key]
 set_modtime = false
 ```
@@ -55,20 +59,26 @@ or you'll get errors.
 Then you can do things like the following:
 
 ```bash
-rclone sync ./my-giant-dir/ impacc:/my-giant-dir
+rclone sync ./my-giant-dir/ my_bucket:/my-giant-dir
 ```
 
 ### 2. Verify your upload checksums
 
-The provided verify-checksums.py Python script will create a dictionary of md5sums for your local files and compare them to the md5sums (ETags) of the same files in the S3 bucket.  
+The provided verify-checksums.py Python script will create a dictionary of md5sums for your local files and compare them 
+to the md5sums (ETags) of the same files in the S3 bucket.  
 
 ```bash
-$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --remote-path Boston/my-giant-dir/ --warn-missing
+$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing
 ```
 
-You can also use the output of md5sum as the local source:
+You can also use the saved output of md5sum as the local source:
 ```bash
+$ cat ./local-checksums.txt
+c157a79031e1c40f85931829bc5fc552  bar.txt
+258622b1688250cb619f3c9ccaefb7eb  baz.txt
+d3b07384d113edec49eaa6238ad5ff00  foo.txt
 
+$ python3 verify-checksums.py check-list --checksum-list local-checksums.txt --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing
 ```
 
 
@@ -99,12 +109,9 @@ Usage: verify-checksums.py check-directory [OPTIONS]
 
 Options:
   --local-path PATH   Local directory path
-  --include TEXT      Glob of filenames to include, e.g. "*.gz". Defaults to
-                      "*" (all)
-  --bucket TEXT       Bucket name (e.g. "impacc-study", not "s3://impacc-
-                      study"  [required]
-  --remote-path TEXT  Bucket directory to check against, e.g. Boston/foo.
-                      [required]
+  --include TEXT      Glob of filenames to include, e.g. "*.gz". Defaults to "*" (all)
+  --bucket TEXT       Bucket name (e.g. "my-bucket", not "s3://my-bucket"  [required]
+  --remote-path TEXT  Bucket directory to check against, e.g. my-path/my-giant-dir [required]
   --warn-missing      Warn if a file is missing from the bucket.
   --debug             Turn on debugging.
   --help              Show this message and exit.
@@ -113,19 +120,19 @@ Options:
 ### Check a directory (everything correct)
 ```bash
 # Upload some test files with rclone
-$ rclone sync ./my-giant-dir/ impacc:/my-giant-dir
+$ rclone sync ./my-giant-dir/ my_bucket:/my-giant-dir
 
 #(no output, successful upload)
 
 # Verify checksums
-$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --remote-path Boston/my-giant-dir/ --warn-missing
-Verifying ./my-giant-dir/* checksums against s3://impacc-study/Boston/my-giant-dir/
+$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing
+Verifying ./my-giant-dir/* checksums against s3://my-bucket/my-path/my-giant-dir/
 Warn if files missing on s3: True
 Verified 3 files, 0 errors.
 
 # Verify checksums, turn on debugging info
-$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --remote-path Boston/my-giant-dir/ --warn-missing --debug
-Verifying ./my-giant-dir/* checksums against s3://impacc-study/Boston/my-giant-dir/
+$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing --debug
+Verifying ./my-giant-dir/* checksums against s3://my-bucket/my-path/my-giant-dir/
 Warn if files missing on s3: True
 Found credentials in shared credentials file: ~/.aws/credentials
 OK baz.txt local: 258622b1688250cb619f3c9ccaefb7eb, s3: 258622b1688250cb619f3c9ccaefb7eb
@@ -138,8 +145,8 @@ Verified 3 files, 0 errors.
 ```bash
 $ echo foo >> ./my-giant-dir/foo.txt
 
-$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --remote-path Boston/my-giant-dir/ --warn-missing --debug
-Verifying ./my-giant-dir/* checksums against s3://impacc-study/Boston/my-giant-dir/
+$ python3 verify-checksums.py check-directory --local-path ./my-giant-dir --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing --debug
+Verifying ./my-giant-dir/* checksums against s3://my-bucket/my-path/my-giant-dir/
 Warn if files missing on s3: True
 ERROR foo.txt local: 5fb7ba7e8447a836e774b66155f5776a s3: d3b07384d113edec49eaa6238ad5ff00
 Verified 3 files, 1 errors.
@@ -158,8 +165,8 @@ c157a79031e1c40f85931829bc5fc552  bar.txt
 d3b07384d113edec49eaa6238ad5ff00  foo.txt
 
 # Verify info in file against s3
-$ python3 verify-checksums.py check-list --checksum-list local-checksums.txt --remote-path Boston/my-giant-dir/ --warn-missing
-Verifying <_io.TextIOWrapper name='local-checksums.txt' mode='r' encoding='UTF-8'> checksums against s3://impacc-study/Boston/my-giant-dir/
+$ python3 verify-checksums.py check-list --checksum-list local-checksums.txt --bucket my-bucket --remote-path my-path/my-giant-dir/ --warn-missing
+Verifying <_io.TextIOWrapper name='local-checksums.txt' mode='r' encoding='UTF-8'> checksums against s3://my-bucket/my-path/my-giant-dir/
 Warn if files missing on s3: True
 ERROR foo.txt local: 5fb7ba7e8447a836e774b66155f5776a s3: d3b07384d113edec49eaa6238ad5ff00
 Verified 3 files, 1 errors.
